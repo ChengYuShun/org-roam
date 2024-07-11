@@ -30,6 +30,8 @@
 ;; This library provides definitions for utilities that used throughout the
 ;; whole package.
 ;;
+;; This module is modified by Yushun Cheng on 2024-07-11.
+;;
 ;;; Code:
 
 (require 'org-roam)
@@ -38,6 +40,41 @@
   "Require LIBS."
   (dolist (lib libs)
     (require lib nil 'noerror)))
+
+;;; Link utilities
+(defun org-roam-link-insert (id &optional description)
+  "Insert a link using `org-insert-link'.  Prompt for the link
+description if DESCRIPTION is nil."
+  (org-insert-link nil (concat "id:" id)
+                   (or description
+                       (read-string "Link description: "))))
+
+(defvar org-roam-stored-link nil
+  "THE stored link in the form (ID . DESC).")
+
+(defun org-roam-link-store ()
+  "Store the link at the position."
+  (interactive)
+  (let* ((node (org-roam-node-at-point))
+         (id (org-roam-node-id node))
+         (title (org-roam-node-title node)))
+    (setq org-roam-stored-link (cons id title))
+    (message "Stored link \"%s\" to ID %s" title id)))
+
+(defun org-roam-link-paste ()
+  "Insert the stored link at position."
+  (interactive)
+  (if org-roam-stored-link
+      (org-roam-link-insert (car org-roam-stored-link)
+                            (cdr org-roam-stored-link))
+    (org-roam-node-insert)))
+
+(defun org-roam-link-open ()
+  "Open the stored link in the current buffer."
+  (interactive)
+  (if org-roam-stored-link
+      (org-roam-id-open (car org-roam-stored-link) nil)
+    (org-roam-node-find-global)))
 
 ;;; String utilities
 ;; TODO Refactor this.
