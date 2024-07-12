@@ -45,6 +45,12 @@
 (defun org-roam-link-insert (id &optional description)
   "Insert a link using `org-insert-link'.  Prompt for the link
 description if DESCRIPTION is nil."
+  (when (region-active-p)
+    (setq description
+          (org-link-display-format
+           (buffer-substring-no-properties
+            (set-marker (make-marker) (region-beginning))
+            (set-marker (make-marker) (region-end))))))
   (org-insert-link nil (concat "id:" id)
                    (or description
                        (read-string "Link description: "))))
