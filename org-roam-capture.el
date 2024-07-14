@@ -747,8 +747,12 @@ This function is to be called in the Org-capture finalization process."
         (set-marker (car region) nil)
         (set-marker (cdr region) nil))
       (let* ((id (org-roam-capture--get :id))
-             (description (org-roam-capture--get :link-description)))
-        (org-roam-link-insert id (if (equal description "") nil description))
+             (description (org-roam-capture--get :link-description))
+             (description (if (equal description "") nil description)))
+        (if (equal (point) (marker-position mkr))
+            (org-roam-link-insert id description)
+          (org-with-point-at mkr
+            (org-roam-link-insert id description)))
         (run-hook-with-args 'org-roam-post-node-insert-hook
                             id
                             description)))))
