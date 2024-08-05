@@ -65,14 +65,15 @@ description if DESCRIPTION is nil."
   "Insert the stored link at position."
   (interactive)
   (if org-roam-stored-link
-      (org-roam-link-insert
-       (car org-roam-stored-link)
-       (if (region-active-p)
-           (org-link-display-format
-            (buffer-substring-no-properties
-             (set-marker (make-marker) (region-beginning))
-             (set-marker (make-marker) (region-end))))
-         (cdr org-roam-stored-link)))
+      (let* ((id (car org-roam-stored-link))
+             (desc (if (region-active-p)
+                       (org-link-display-format
+                        (buffer-substring-no-properties
+                         (set-marker (make-marker) (region-beginning))
+                         (set-marker (make-marker) (region-end))))
+                     (cdr org-roam-stored-link)))
+             (desc (if (equal desc "") nil desc)))
+        (org-roam-link-insert id desc))
     (org-roam-node-insert)))
 
 (defun org-roam-link-open ()
