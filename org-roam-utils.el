@@ -62,18 +62,36 @@ description if DESCRIPTION is nil."
     (message "Stored link \"%s\" to ID %s" title id)))
 
 (defun org-roam-link-paste ()
-  "Insert the stored link at position."
+  "Insert the stored link at position.
+
+If no link has been stored, capture a new one.
+
+If there is a link at point, update that link. without changing
+its description.
+
+If there is a region selected, use the selected text as the link
+description.
+
+If the link description has not been specified, prompt for user
+input."
   (interactive)
   (if org-roam-stored-link
-      (let* ((id (car org-roam-stored-link))
-             (desc (if (region-active-p)
-                       (org-link-display-format
-                        (buffer-substring-no-properties
-                         (set-marker (make-marker) (region-beginning))
-                         (set-marker (make-marker) (region-end))))
-                     (cdr org-roam-stored-link)))
-             (desc (if (equal desc "") nil desc)))
-        (org-roam-link-insert id desc))
+      (let ((id (car org-roam-stored-link)))
+        (if (org-in-regexp org-link-bracket-re)
+            (let ((beg (match-beginning 1))
+                  (end (match-end 1)))
+              (save-excursion
+                (goto-char beg)
+                (delete-region beg end)
+                (insert (org-link-escape (concat "id:" id)))))
+          (let* ((desc (if (region-active-p)
+                           (org-link-display-format
+                            (buffer-substring-no-properties
+                             (set-marker (make-marker) (region-beginning))
+                             (set-marker (make-marker) (region-end))))
+                         (cdr org-roam-stored-link)))
+                 (desc (if (equal desc "") nil desc)))
+            (org-roam-link-insert id desc))))
     (org-roam-node-insert)))
 
 (defun org-roam-link-open ()
