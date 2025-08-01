@@ -1,11 +1,11 @@
 ;;; org-roam-utils.el --- Utilities for Org-roam -*- lexical-binding: t; -*-
 
-;; Copyright © 2020-2022 Jethro Kuan <jethrokuan95@gmail.com>
+;; Copyright © 2020-2025 Jethro Kuan <jethrokuan95@gmail.com>
 
 ;; Author: Jethro Kuan <jethrokuan95@gmail.com>
 ;; URL: https://github.com/org-roam/org-roam
 ;; Keywords: org-mode, roam, convenience
-;; Version: 2.2.2
+;; Version: 2.3.1
 ;; Package-Requires: ((emacs "26.1") (dash "2.13") (org "9.6"))
 
 ;; This file is NOT part of GNU Emacs.
@@ -225,7 +225,8 @@ If FILE, set `default-directory' to FILE's directory and insert its contents."
   (let ((current-org-roam-directory (make-symbol "current-org-roam-directory")))
     `(let ((,current-org-roam-directory org-roam-directory))
        (with-temp-buffer
-         (let ((org-roam-directory ,current-org-roam-directory))
+         (let ((org-roam-directory ,current-org-roam-directory)
+               (org-inhibit-startup t))
            (delay-mode-hooks (org-mode))
            (when ,file
              (insert-file-contents ,file)

@@ -1,11 +1,11 @@
 ;;; org-roam-db.el --- Org-roam database API -*- coding: utf-8; lexical-binding: t; -*-
 
-;; Copyright © 2020-2022 Jethro Kuan <jethrokuan95@gmail.com>
+;; Copyright © 2020-2025 Jethro Kuan <jethrokuan95@gmail.com>
 
 ;; Author: Jethro Kuan <jethrokuan95@gmail.com>
 ;; URL: https://github.com/org-roam/org-roam
 ;; Keywords: org-mode, roam, convenience
-;; Version: 2.2.2
+;; Version: 2.3.1
 ;; Package-Requires: ((emacs "26.1") (dash "2.13") (org "9.6") (emacsql "4.1.0") (magit-section "3.0.0"))
 
 ;; This file is NOT part of GNU Emacs.
@@ -108,7 +108,7 @@ ROAM_REFS."
   :type '(alist))
 
 ;;; Variables
-(defconst org-roam-db-version 18)
+(defconst org-roam-db-version 20)
 
 (defvar org-roam-db--connection (make-hash-table :test #'equal)
   "Database connection to Org-roam database.")
@@ -655,12 +655,14 @@ database, see `org-roam-db-sync' command."
       (add-hook 'kill-emacs-hook #'org-roam-db--close-all)
       (advice-add #'rename-file :after  #'org-roam-db-autosync--rename-file-a)
       (advice-add #'delete-file :before #'org-roam-db-autosync--delete-file-a)
+      (advice-add #'vc-delete-file :around #'org-roam-db-autosync--vc-delete-file-a)
       (org-roam-db-sync))
      (t
       (remove-hook 'find-file-hook  #'org-roam-db-autosync--setup-file-h)
       (remove-hook 'kill-emacs-hook #'org-roam-db--close-all)
       (advice-remove #'rename-file #'org-roam-db-autosync--rename-file-a)
       (advice-remove #'delete-file #'org-roam-db-autosync--delete-file-a)
+      (advice-remove #'vc-delete-file #'org-roam-db-autosync--vc-delete-file-a)
       (org-roam-db--close-all)
       ;; Disable local hooks for all org-roam buffers
       (dolist (buf (org-roam-buffer-list))
@@ -687,6 +689,17 @@ FILE is removed from the database."
              (not (backup-file-name-p file))
              (org-roam-file-p file))
     (org-roam-db-clear-file (expand-file-name file))))
+
+(defun org-roam-db-autosync--vc-delete-file-a (fun file)
+  "Maintain cache consistency on file deletion by FUN.
+FILE is removed from the database."
+  (let ((org-roam-file-p (and (not (auto-save-file-name-p file))
+                              (not (backup-file-name-p file))
+                              (org-roam-file-p file))))
+    (apply fun `(,file))
+    (when (and org-roam-file-p
+               (not (file-exists-p file)))
+      (org-roam-db-clear-file (expand-file-name file)))))
 
 (defun org-roam-db-autosync--rename-file-a (old-file new-file-or-dir &rest _args)
   "Maintain cache consistency of file rename.

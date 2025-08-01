@@ -1,11 +1,11 @@
 ;;; org-roam-node.el --- Interfacing and interacting with nodes -*- lexical-binding: t; -*-
 
-;; Copyright © 2020-2022 Jethro Kuan <jethrokuan95@gmail.com>
+;; Copyright © 2020-2025 Jethro Kuan <jethrokuan95@gmail.com>
 
 ;; Author: Jethro Kuan <jethrokuan95@gmail.com>
 ;; URL: https://github.com/org-roam/org-roam
 ;; Keywords: org-mode, roam, convenience
-;; Version: 2.2.2
+;; Version: 2.3.1
 ;; Package-Requires: ((emacs "26.1") (dash "2.13") (org "9.6") (magit-section "3.0.0"))
 
 ;; This file is NOT part of GNU Emacs.
@@ -39,6 +39,16 @@
 ;;;; Completing-read
 (defcustom org-roam-node-display-template "${title}"
   "Configures display formatting for Org-roam node.
+
+If it is a function, it will be called to format a node.
+Its result is expected to be a string (potentially with
+embedded properties).
+
+If it is a string and it will be used as described in org-roam
+ (see org-roam-node-display-template)
+
+When it is a string, the following processing is done:
+
 Patterns of form \"${field-name:length}\" are interpolated based
 on the current node.
 
@@ -64,9 +74,23 @@ as many characters as possible and will be aligned accordingly.
 
 A closure can also be assigned to this variable in which case the
 closure is evaluated and the return value is used as the
-template. The closure must evaluate to a valid template string."
+template. The closure must evaluate to a valid template string.
+
+When org-roam-node-display-template is a function, the function is
+expected to return a string, potentially propertized. For example, the
+following function shows the title and base filename of the node:
+
+\(defun my--org-roam-format (node)
+  \"formats the node\"
+  (format \"%-40s %s\"
+          (if (org-roam-node-title node)
+              (propertize (org-roam-node-title node) 'face 'org-todo)
+            \"\")
+          (file-name-nondirectory (org-roam-node-file node))))
+
+\q(setq org-roam-node-display-template 'my--org-roam-format)"
   :group 'org-roam
-  :type  '(string function))
+  :type  '(choice string function))
 
 (defcustom org-roam-node-annotation-function #'org-roam-node-read--annotation
   "This function used to attach annotations for `org-roam-node-read'.
@@ -90,7 +114,7 @@ argument, an `org-roam-node', and return a string.
 If a string is provided, it is a template string expanded by
 `org-roam-node--format-entry'."
   :group 'org-roam
-  :type '(string function))
+  :type '(choice string function))
 
 (defcustom org-roam-node-template-prefixes
   '(("tags" . "#")
@@ -143,6 +167,10 @@ This path is relative to `org-roam-directory'."
   :group 'org-roam
   :type 'string)
 
+(defvar org-roam-link-type "roam"
+  "Link type for org-roam nodes.
+Replaced by `id' automatically when `org-roam-link-auto-replace' is non-nil.")
+
 (defvar org-roam-node-history nil
   "Minibuffer history of nodes.")
 
@@ -151,6 +179,11 @@ This path is relative to `org-roam-directory'."
 
 ;;; Definition
 (cl-defstruct (org-roam-node (:constructor org-roam-node-create)
+                             (:constructor org-roam-node-create-from-db
+                                           (title aliases                    ; 2
+                                                  id file file-title level todo     ; 5
+                                                  point priority scheduled deadline properties ;;5
+                                                  olp file-atime file-mtime tags refs)) ;;5
                              (:copier nil))
   "A heading or top level file with an assigned ID property."
   file file-title file-hash file-atime file-mtime
@@ -352,23 +385,27 @@ nodes."
 (defun org-roam-node-list ()
   "Return all nodes stored in the database as a list of `org-roam-node's."
   (let ((rows (org-roam-db-query
-               "SELECT
+               "
+SELECT
+  title,
+  aliases,
+
   id,
   file,
   filetitle,
   \"level\",
   todo,
+
   pos,
   priority ,
   scheduled ,
   deadline ,
-  title,
   properties ,
+
   olp,
   atime,
   mtime,
   '(' || group_concat(tags, ' ') || ')' as tags,
-  aliases,
   refs
 FROM
   (
@@ -417,32 +454,20 @@ FROM
     LEFT JOIN refs ON refs.node_id = nodes.id
     GROUP BY nodes.id, tags.tag, aliases.alias )
   GROUP BY id, tags )
-GROUP BY id")))
-    (cl-loop for row in rows
-             append (pcase-let* ((`(
-                                    ,id ,file ,file-title ,level ,todo ,pos ,priority ,scheduled ,deadline
-                                    ,title ,properties ,olp ,atime ,mtime ,tags ,aliases ,refs)
-                                  row)
-                                 (all-titles (cons title aliases)))
-                      (mapcar (lambda (temp-title)
-                                (org-roam-node-create :id id
-                                                      :file file
-                                                      :file-title file-title
-                                                      :file-atime atime
-                                                      :file-mtime mtime
-                                                      :level level
-                                                      :point pos
-                                                      :todo todo
-                                                      :priority priority
-                                                      :scheduled scheduled
-                                                      :deadline deadline
-                                                      :title temp-title
-                                                      :aliases aliases
-                                                      :properties properties
-                                                      :olp olp
-                                                      :tags tags
-                                                      :refs refs))
-                              all-titles)))))
+GROUP BY id
+")))
+    (mapcan
+     (lambda (row)
+       (let (
+             (all-titles (cons (car row) (nth 1 row)))
+             )
+         (mapcar (lambda (temp-title)
+                   (apply 'org-roam-node-create-from-db (cons temp-title (cdr row))))
+                 all-titles)
+         ))
+     rows)
+    )
+  )
 
 ;;;; Finders
 (defun org-roam-node-marker (node)
@@ -556,6 +581,25 @@ PROMPT is a string to show at the beginning of the mini-buffer, defaulting to \"
     (or (cdr (assoc node nodes))
         (org-roam-node-create :title node))))
 
+(defun org-roam--format-nodes-using-template (nodes)
+  "Formats NODES using org-roam template features.
+Uses org-roam--node-display-template."
+  (let  (
+         (wTemplate (org-roam-node--process-display-format org-roam-node-display-template))
+         )
+    (mapcar (lambda (node)
+              (org-roam-node-read--to-candidate node wTemplate)) nodes))
+  )
+
+(defun org-roam--format-nodes-using-function (nodes)
+  "Formats NODES using the function org-roam-node-display-template."
+  (mapcar (lambda (node)
+            (cons
+             (propertize (funcall org-roam-node-display-template node) 'node node)
+             node))
+          nodes)
+  )
+
 (defun org-roam-node-read--completions (&optional filter-fn sort-fn)
   "Return an alist for node completion.
 The car is the displayed title or alias for the node, and the cdr
@@ -565,15 +609,17 @@ and when nil is returned the node will be filtered out.
 SORT-FN is a function to sort nodes. See `org-roam-node-read-sort-by-file-mtime'
 for an example sort function.
 The displayed title is formatted according to `org-roam-node-display-template'."
-  (let* ((template (org-roam-node--process-display-format org-roam-node-display-template))
+  (let* (
          (nodes (org-roam-node-list))
          (nodes (if filter-fn
                     (cl-remove-if-not
                      (lambda (n) (funcall filter-fn n))
                      nodes)
                   nodes))
-         (nodes (mapcar (lambda (node)
-                          (org-roam-node-read--to-candidate node template)) nodes))
+         (nodes (if (functionp org-roam-node-display-template)
+                    (org-roam--format-nodes-using-function nodes)
+                  (org-roam--format-nodes-using-template nodes)))
+
          (sort-fn (or sort-fn
                       (when org-roam-node-default-sort
                         (intern (concat "org-roam-node-read-sort-by-"
@@ -726,7 +772,7 @@ The INFO, if provided, is passed to the underlying `org-roam-capture-'."
     (deactivate-mark)))
 
 ;;;;; [roam:] link
-(org-link-set-parameters "roam" :follow #'org-roam-link-follow-link)
+(org-link-set-parameters org-roam-link-type :follow #'org-roam-link-follow-link)
 (defun org-roam-link-follow-link (title-or-alias)
   "Navigate \"roam:\" link to find and open the node with TITLE-OR-ALIAS.
 Assumes that the cursor was put where the link is."
@@ -755,7 +801,7 @@ Assumes that the cursor was put where the link is."
              node)
         (goto-char (org-element-property :begin link))
         (when (and (org-in-regexp org-link-any-re 1)
-                   (string-equal type "roam")
+                   (string-equal type org-roam-link-type)
                    (setq node (save-match-data (org-roam-node-from-title-or-alias path))))
           (replace-match (org-link-make-string
                           (concat "id:" (org-roam-node-id node))
@@ -765,7 +811,7 @@ Assumes that the cursor was put where the link is."
   "Replace all \"roam:\" links in buffer with \"id:\" links."
   (interactive)
   (org-with-point-at 1
-    (while (re-search-forward org-link-bracket-re nil t)
+    (while (search-forward (concat "[[" org-roam-link-type ":") nil t)
       (org-roam-link-replace-at-point))))
 
 (add-hook 'org-roam-find-file-hook #'org-roam--replace-roam-links-on-save-h)
