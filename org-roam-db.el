@@ -2,12 +2,6 @@
 
 ;; Copyright © 2020-2025 Jethro Kuan <jethrokuan95@gmail.com>
 
-;; Author: Jethro Kuan <jethrokuan95@gmail.com>
-;; URL: https://github.com/org-roam/org-roam
-;; Keywords: org-mode, roam, convenience
-;; Version: 2.3.1
-;; Package-Requires: ((emacs "26.1") (dash "2.13") (org "9.6") (emacsql "4.1.0") (magit-section "3.0.0"))
-
 ;; This file is NOT part of GNU Emacs.
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -736,6 +730,14 @@ OLD-FILE is cleared from the database, and NEW-FILE-OR-DIR is added."
   "Print information about node at point."
   (interactive)
   (prin1 (org-roam-node-at-point)))
+
+(defun org-roam-db-explore ()
+  "Explore the org-roam DB contents."
+  (interactive)
+  (require 'sqlite-mode nil t)
+  (if (fboundp 'sqlite-mode-open-file)
+      (sqlite-mode-open-file org-roam-db-location)
+    (message "org-roam-db-explore: This command requires Emacs 29")))
 
 (provide 'org-roam-db)
 
