@@ -157,7 +157,7 @@ nodes." org-id-locations-file)
     (advice-add 'org-roam-capture--get-target :around #'org-roam-capture--get-if-new-target-a)
     (defun org-roam-capture--get-if-new-target-a (fn &rest args)
       "Get the current capture target using deprecated :if-new property."
-      (if-let ((target (org-roam-capture--get :if-new)))
+      (if-let* ((target (org-roam-capture--get :if-new)))
           (prog1 target
             (unless inhibit-warning-p
               (lwarn 'org-roam-capture :warning
@@ -226,6 +226,10 @@ nodes." org-id-locations-file)
 (define-obsolete-variable-alias
   'org-roam-mode-section-functions
   'org-roam-mode-sections "org-roam 2.2.0")
+
+(define-obsolete-function-alias
+  'org-roam-dolist-with-progress
+  'dolist-with-progress-reporter "2025-11-07")
 
 ;;; Obsolete functions
 (make-obsolete 'org-roam-get-keyword 'org-collect-keywords "org-roam 2.0")

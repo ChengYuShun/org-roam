@@ -156,23 +156,6 @@ FN must take two arguments: the key and the value."
               plist-index (cdr plist-index)))))
   plist)
 
-(defmacro org-roam-dolist-with-progress (spec msg &rest body)
-  "Loop over a list and report progress in the echo area.
-Like `dolist-with-progress-reporter', but falls back to `dolist'
-if the function does not yet exist.
-
-Evaluate BODY with VAR bound to each car from LIST, in turn.
-Then evaluate RESULT to get return value, default nil.
-
-MSG is a progress reporter object or a string.  In the latter
-case, use this string to create a progress reporter.
-
-SPEC is a list, as per `dolist'."
-  (declare (indent 2))
-  (if (fboundp 'dolist-with-progress-reporter)
-      `(dolist-with-progress-reporter ,spec ,msg ,@body)
-    `(dolist ,spec ,@body)))
-
 ;;; File utilities
 (defun org-roam-descendant-of-p (a b)
   "Return t if A is descendant of B."
@@ -263,6 +246,17 @@ value (possibly nil). Adapted from `s-format'."
 ;;; Fontification
 (defvar org-ref-buffer-hacked)
 
+(defvar org-roam-fontification-buffer "*org-roam-fontification-buffer*"
+  "The buffer helps to increase the speed of org-roam-buffer fontification.")
+
+(defun org-roam-get-fontification-buffer-create ()
+  "Get or create the `org-roam-fontification-buffer'.
+This buffer used to fontify multiple backlink previews efficiently (`org-mode' is booted just once)."
+  (with-current-buffer (get-buffer-create org-roam-fontification-buffer)
+    (unless (derived-mode-p 'org-mode)
+      (org-mode))
+    (current-buffer)))
+
 (defun org-roam-fontify-like-in-org-mode (s)
   "Fontify string S like in Org mode.
 Like `org-fontify-like-in-org-mode', but supports `org-ref'."
@@ -282,10 +276,10 @@ Like `org-fontify-like-in-org-mode', but supports `org-ref'."
   ;;
   ;; `org-ref-buffer-hacked' is a buffer-local variable, therefore we inline
   ;; `org-fontify-like-in-org-mode' here
-  (with-temp-buffer
+  (with-current-buffer (org-roam-get-fontification-buffer-create)
+    (erase-buffer)
     (insert s)
     (let ((org-ref-buffer-hacked t))
-      (org-mode)
       (setq-local org-fold-core-style 'overlays)
       (font-lock-ensure)
       (buffer-string))))
@@ -486,7 +480,7 @@ straight.el on Windows.
 See <https://github.com/raxod502/straight.el/issues/520>."
   (when (and (bound-and-true-p straight-symlink-emulation-mode)
              (fboundp 'straight-chase-emulated-symlink))
-    (when-let ((target (straight-chase-emulated-symlink filename)))
+    (when-let* ((target (straight-chase-emulated-symlink filename)))
       (unless (eq target 'broken)
         (setq filename target))))
   (file-chase-links filename))
@@ -507,7 +501,7 @@ See <https://github.com/raxod502/straight.el/issues/520>."
     (insert (format "- Org: %s\n" (org-version nil 'full)))
     (insert (format "- Org-roam: %s" (org-roam-version)))
     (insert (format "- sqlite-connector: %s"
-                    (if-let ((conn (org-roam-db--get-connection)))
+                    (if-let* ((conn (org-roam-db--get-connection)))
                         (eieio-object-class conn)
                       "not connected")))))
 

@@ -27,6 +27,7 @@
 ;;
 ;;; Code:
 (require 'crm)
+(require 'subr-x)
 (require 'org-roam)
 
 ;;; Options
@@ -60,10 +61,10 @@ and then reference it here or in the capture templates as
 
 \"length\" is an optional specifier and declares how many
 characters can be used to display the value of the corresponding
-field. If it's not specified, the field will be inserted as is,
-i.e. it won't be aligned nor trimmed. If it's an integer, the
+field. If it\\='s not specified, the field will be inserted as is,
+i.e. it won\\='t be aligned nor trimmed. If it\\='s an integer, the
 field will be aligned accordingly and all the exceeding
-characters will be trimmed out. If it's \"*\", the field will use
+characters will be trimmed out. If it\\='s \"*\", the field will use
 as many characters as possible and will be aligned accordingly.
 
 A closure can also be assigned to this variable in which case the
@@ -78,11 +79,11 @@ following function shows the title and base filename of the node:
   \"formats the node\"
   (format \"%-40s %s\"
           (if (org-roam-node-title node)
-              (propertize (org-roam-node-title node) 'face 'org-todo)
+              (propertize (org-roam-node-title node) \\='face \\='org-todo)
             \"\")
           (file-name-nondirectory (org-roam-node-file node))))
 
-\q(setq org-roam-node-display-template 'my--org-roam-format)"
+\(setq org-roam-node-display-template \\='my--org-roam-format)"
   :group 'org-roam
   :type  '(choice string function))
 
@@ -184,55 +185,29 @@ Replaced by `id' automatically when `org-roam-link-auto-replace' is non-nil.")
   id level point todo priority scheduled deadline title properties olp
   tags aliases refs)
 
-;; Shim `string-glyph-compose' and `string-glyph-decompose' for Emacs versions that do not have it.
-;; The functions were introduced in emacs commit 3f096eb3405b2fce7c35366eb2dcf025dda55783 and the
-;; (original) functions behind them aren't autoloaded anymore.
-(dolist (sym.replace
-         '((string-glyph-compose . ucs-normalize-NFC-string)
-           (string-glyph-decompose . ucs-normalize-NFD-string)))
-  (let ((emacs-29-symbol (car sym.replace))
-        (previous-implementation (cdr sym.replace)))
-    (unless (fboundp emacs-29-symbol)
-      (defalias emacs-29-symbol previous-implementation))))
-
 (cl-defmethod org-roam-node-slug ((node org-roam-node))
   "Return the slug of NODE."
-  (let ((title (org-roam-node-title node))
-        (slug-trim-chars '(;; Combining Diacritical Marks https://www.unicode.org/charts/PDF/U0300.pdf
-                           768 ; U+0300 COMBINING GRAVE ACCENT
-                           769 ; U+0301 COMBINING ACUTE ACCENT
-                           770 ; U+0302 COMBINING CIRCUMFLEX ACCENT
-                           771 ; U+0303 COMBINING TILDE
-                           772 ; U+0304 COMBINING MACRON
-                           774 ; U+0306 COMBINING BREVE
-                           775 ; U+0307 COMBINING DOT ABOVE
-                           776 ; U+0308 COMBINING DIAERESIS
-                           777 ; U+0309 COMBINING HOOK ABOVE
-                           778 ; U+030A COMBINING RING ABOVE
-                           779 ; U+030B COMBINING DOUBLE ACUTE ACCENT
-                           780 ; U+030C COMBINING CARON
-                           795 ; U+031B COMBINING HORN
-                           803 ; U+0323 COMBINING DOT BELOW
-                           804 ; U+0324 COMBINING DIAERESIS BELOW
-                           805 ; U+0325 COMBINING RING BELOW
-                           807 ; U+0327 COMBINING CEDILLA
-                           813 ; U+032D COMBINING CIRCUMFLEX ACCENT BELOW
-                           814 ; U+032E COMBINING BREVE BELOW
-                           816 ; U+0330 COMBINING TILDE BELOW
-                           817 ; U+0331 COMBINING MACRON BELOW
-                           )))
-    (cl-flet* ((nonspacing-mark-p (char) (memq char slug-trim-chars))
-               (strip-nonspacing-marks (s) (string-glyph-compose
-                                            (apply #'string
-                                                   (seq-remove #'nonspacing-mark-p
-                                                               (string-glyph-decompose s)))))
-               (cl-replace (title pair) (replace-regexp-in-string (car pair) (cdr pair) title)))
-      (let* ((pairs `(("[^[:alnum:][:digit:]]" . "_") ;; convert anything not alphanumeric
-                      ("__*" . "_")                   ;; remove sequential underscores
-                      ("^_" . "")                     ;; remove starting underscore
-                      ("_$" . "")))                   ;; remove ending underscore
-             (slug (-reduce-from #'cl-replace (strip-nonspacing-marks title) pairs)))
-        (downcase slug)))))
+  (org-roam-node-slugify (org-roam-node-title node)))
+
+(defun org-roam-node-slugify (title)
+  "Slugify TITLE."
+  (require 'ucs-normalize)
+  (let ((slug-trim-chars
+         ;; Combining Diacritical Marks https://www.unicode.org/charts/PDF/U0300.pdf
+         ;; For why these specific glyphs: https://github.com/org-roam/org-roam/pull/1460
+         '( #x300 #x301 #x302 #x303 #x304 #x306 #x307
+            #x308 #x309 #x30A #x30B #x30C #x31B #x323
+            #x324 #x325 #x327 #x32D #x32E #x330 #x331)))
+    (thread-last title
+                 (ucs-normalize-NFD-string) ;; aka. `string-glyph-decompose' from Emacs 29
+                 (seq-remove (lambda (char) (memq char slug-trim-chars)))
+                 (apply #'string)
+                 (ucs-normalize-NFC-string) ;; aka. `string-glyph-compose' from Emacs 29
+                 (replace-regexp-in-string "[^[:alnum:]]" "_") ;; convert anything not alphanumeric
+                 (replace-regexp-in-string "__*" "_")          ;; remove sequential underscores
+                 (replace-regexp-in-string "^_" "")            ;; remove starting underscore
+                 (replace-regexp-in-string "_$" "")            ;; remove ending underscore
+                 (downcase))))
 
 (cl-defmethod org-roam-node-formatted ((node org-roam-node))
   "Return a formatted string for NODE."
@@ -269,7 +244,7 @@ populated."
                                   (org-roam-up-heading-or-point-min)
                                   (funcall outline-level)))))
               (org-roam-up-heading-or-point-min))
-            (when-let ((id (org-id-get)))
+            (when-let* ((id (org-id-get)))
               (org-roam-populate
                (org-roam-node-create
                 :id id
@@ -289,7 +264,8 @@ Return nil if a node with ID does not exist."
 Return nil if the node does not exist.
 Throw an error if multiple choices exist.
 
-If NOCASE is non-nil, the query is case insensitive.  It is case sensitive otherwise."
+If NOCASE is non-nil, the query is case insensitive.
+It is case sensitive otherwise."
   (let ((matches (seq-uniq
                   (append
                    (org-roam-db-query (vconcat [:select [id] :from nodes
@@ -321,15 +297,15 @@ Return nil if there's no node with such REF."
         (setq type "cite"
               path (substring ref 1))))
       (when (and type path)
-        (when-let ((id (caar (org-roam-db-query
-                              [:select [nodes:id]
-                               :from refs
-                               :left-join nodes
-                               :on (= refs:node-id nodes:id)
-                               :where (= refs:type $s1)
-                               :and (= refs:ref $s2)
-                               :limit 1]
-                              type path))))
+        (when-let* ((id (caar (org-roam-db-query
+                               [:select [nodes:id]
+                                :from refs
+                                :left-join nodes
+                                :on (= refs:node-id nodes:id)
+                                :where (= refs:type $s1)
+                                :and (= refs:ref $s2)
+                                :limit 1]
+                               type path))))
           (org-roam-populate (org-roam-node-create :id id)))))))
 
 (cl-defmethod org-roam-populate ((node org-roam-node))
@@ -337,13 +313,13 @@ Return nil if there's no node with such REF."
 Uses the ID, and fetches remaining details from the database.
 This can be quite costly: avoid, unless dealing with very few
 nodes."
-  (when-let ((node-info (car (org-roam-db-query [:select [
-                                                          file level pos todo priority
-                                                          scheduled deadline title properties olp]
-                                                 :from nodes
-                                                 :where (= id $s1)
-                                                 :limit 1]
-                                                (org-roam-node-id node)))))
+  (when-let* ((node-info (car (org-roam-db-query [:select [
+                                                           file level pos todo priority
+                                                           scheduled deadline title properties olp]
+                                                  :from nodes
+                                                  :where (= id $s1)
+                                                  :limit 1]
+                                                 (org-roam-node-id node)))))
     (pcase-let* ((`(,file ,level ,pos ,todo ,priority ,scheduled ,deadline ,title ,properties ,olp) node-info)
                  (`(,atime ,mtime ,file-title) (car (org-roam-db-query [:select [atime mtime title]
                                                                         :from files
@@ -553,7 +529,8 @@ and when nil is returned the node will be filtered out.
 SORT-FN is a function to sort nodes. See `org-roam-node-read-sort-by-file-mtime'
 for an example sort function.
 If REQUIRE-MATCH, the minibuffer prompt will require a match.
-PROMPT is a string to show at the beginning of the mini-buffer, defaulting to \"Node: \""
+PROMPT is a string to show at the beginning of the mini-buffer,
+defaulting to \"Node: \""
   (let* ((nodes (org-roam-node-read--completions filter-fn sort-fn))
          (prompt (or prompt "Node: "))
          (node (completing-read
@@ -770,7 +747,7 @@ The INFO, if provided, is passed to the underlying `org-roam-capture-'."
 (defun org-roam-link-follow-link (title-or-alias)
   "Navigate \"roam:\" link to find and open the node with TITLE-OR-ALIAS.
 Assumes that the cursor was put where the link is."
-  (if-let ((node (org-roam-node-from-title-or-alias title-or-alias)))
+  (if-let* ((node (org-roam-node-from-title-or-alias title-or-alias)))
       (progn
         (when org-roam-link-auto-replace
           (org-roam-link-replace-at-point))
@@ -911,10 +888,15 @@ and no extra content before the first heading."
    (org-with-point-at 1 (org-at-heading-p))))
 
 (defun org-roam-promote-entire-buffer ()
-  "Promote the current buffer.
+  "Promote the current buffer, and save.
 Converts a file containing a single level-1 headline node to a file
 node."
   (interactive)
+  (org-roam--promote-entire-buffer-internal)
+  (org-roam-db-update-file))
+
+(defun org-roam--promote-entire-buffer-internal ()
+  "Promote the current buffer."
   (unless (org-roam--buffer-promoteable-p)
     (user-error "Cannot promote: multiple root headings or there is extra file-level text"))
   (org-with-point-at 1
@@ -925,8 +907,7 @@ node."
       (org-roam-end-of-meta-data t)
       (insert "#+title: " title "\n")
       (when tags (org-roam-tag-add tags))
-      (org-map-region #'org-promote (point-min) (point-max))
-      (org-roam-db-update-file))))
+      (org-map-region #'org-promote (point-min) (point-max)))))
 
 ;;;###autoload
 (defun org-roam-refile (node)

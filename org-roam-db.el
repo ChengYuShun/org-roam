@@ -297,12 +297,12 @@ If HASH is non-nil, use that as the file's hash without recalculating it."
 
 (defun org-roam-db-get-scheduled-time ()
   "Return the scheduled time at point in ISO8601 format."
-  (when-let ((time (org-get-scheduled-time (point))))
+  (when-let* ((time (org-get-scheduled-time (point))))
     (format-time-string "%FT%T" time)))
 
 (defun org-roam-db-get-deadline-time ()
   "Return the deadline time at point in ISO8601 format."
-  (when-let ((time (org-get-deadline-time (point))))
+  (when-let* ((time (org-get-deadline-time (point))))
     (format-time-string "%FT%T" time)))
 
 (defun org-roam-db-node-p ()
@@ -362,7 +362,7 @@ INFO is the org-element parsed buffer."
   (org-with-point-at 1
     (when (and (= (org-outline-level) 0)
                (org-roam-db-node-p))
-      (when-let ((id (org-id-get)))
+      (when-let* ((id (org-id-get)))
         (let* ((file (buffer-file-name (buffer-base-buffer)))
                (title (org-roam-db--file-title))
                (pos (point))
@@ -395,7 +395,7 @@ INFO is the org-element parsed buffer."
 
 (cl-defun org-roam-db-insert-node-data ()
   "Insert node data for headline at point into the Org-roam cache."
-  (when-let ((id (org-id-get)))
+  (when-let* ((id (org-id-get)))
     (let* ((file (buffer-file-name (buffer-base-buffer)))
            (heading-components (org-heading-components))
            (pos (point))
@@ -436,8 +436,8 @@ INFO is the org-element parsed buffer."
 
 (defun org-roam-db-insert-tags ()
   "Insert tags for node at point into Org-roam cache."
-  (when-let ((node-id (org-id-get))
-             (tags (org-get-tags)))
+  (when-let* ((node-id (org-id-get))
+              (tags (org-get-tags)))
     (org-roam-db-query [:insert :into tags
                         :values $v1]
                        (mapcar (lambda (tag)
@@ -553,7 +553,7 @@ INFO is the org-element parsed buffer."
     (secure-hash 'sha1 (current-buffer))))
 
 ;;;; Synchronization
-(defun org-roam-db-update-file (&optional file-path no-require)
+(defun org-roam-db-update-file (&optional file-path _deprecated-arg)
   "Update Org-roam cache for FILE-PATH.
 
 If the file does not exist anymore, remove it from the cache.
@@ -569,8 +569,7 @@ in `org-roam-db-sync'."
                                            :where (= file $s1)] file-path)))
         info)
     (unless (string= content-hash db-hash)
-      (unless no-require
-        (org-roam-require '(org-ref oc)))
+      (require 'org-ref nil t)
       (org-roam-with-file file-path nil
         (emacsql-with-transaction (org-roam-db)
           (org-with-wide-buffer
@@ -590,8 +589,7 @@ in `org-roam-db-sync'."
            (setq info (org-element-parse-buffer))
            (org-roam-db-map-links
             (list #'org-roam-db-insert-link))
-           (when (fboundp 'org-cite-insert)
-             (require 'oc)             ;ensure feature is loaded
+           (when (require 'oc nil t)
              (org-roam-db-map-citations
               info
               (list #'org-roam-db-insert-citation)))))))))
@@ -604,7 +602,8 @@ If FORCE, force a rebuild of the cache from scratch."
   (org-roam-db--close) ;; Force a reconnect
   (when force (delete-file org-roam-db-location))
   (org-roam-db) ;; To initialize the database, no-op if already initialized
-  (org-roam-require '(org-ref oc))
+  (require 'org-ref nil t)
+  (require 'oc nil t)
   (let* ((gc-cons-threshold org-roam-db-gc-threshold)
          (org-agenda-files nil)
          (org-roam-files (org-roam-list-files))
@@ -617,13 +616,13 @@ If FORCE, force a rebuild of the cache from scratch."
           (push file modified-files)))
       (remhash file current-files))
     (emacsql-with-transaction (org-roam-db)
-      (org-roam-dolist-with-progress (file (hash-table-keys current-files))
+      (dolist-with-progress-reporter (file (hash-table-keys current-files))
           "Clearing removed files..."
         (org-roam-db-clear-file file))
-      (org-roam-dolist-with-progress (file modified-files)
+      (dolist-with-progress-reporter (file modified-files)
           "Processing modified files..."
         (condition-case err
-            (org-roam-db-update-file file 'no-require)
+            (org-roam-db-update-file file)
           (error
            (org-roam-db-clear-file file)
            (lwarn 'org-roam :error "Failed to process %s with error %s, skipping..."

@@ -462,7 +462,7 @@ processing by `org-capture'.
 Note: During the capture process this function is run by
 `org-capture-set-target-location', as a (function ...) based
 capture target."
-  (if-let ((id (run-hook-with-args-until-success 'org-roam-capture-preface-hook)))
+  (if-let* ((id (run-hook-with-args-until-success 'org-roam-capture-preface-hook)))
       (org-roam-capture--put :id id)
     (org-roam-capture--setup-target-location)
     ;; Adjust point for plain captures to skip past metadata (e.g. properties drawer)
@@ -703,9 +703,9 @@ the current value of `point'."
 (add-hook 'org-roam-capture-preface-hook #'org-roam-capture--try-capture-to-ref-h)
 (defun org-roam-capture--try-capture-to-ref-h ()
   "Try to capture to an existing node that match the ref."
-  (when-let ((node (and (plist-get org-roam-capture--info :ref)
-                        (org-roam-node-from-ref
-                         (plist-get org-roam-capture--info :ref)))))
+  (when-let* ((node (and (plist-get org-roam-capture--info :ref)
+                         (org-roam-node-from-ref
+                          (plist-get org-roam-capture--info :ref)))))
     (set-buffer (org-capture-target-buffer (org-roam-node-file node)))
     (goto-char (org-roam-node-point node))
     (widen)
@@ -714,7 +714,7 @@ the current value of `point'."
 (add-hook 'org-roam-capture-new-node-hook #'org-roam-capture--insert-captured-ref-h)
 (defun org-roam-capture--insert-captured-ref-h ()
   "Insert the ref if any."
-  (when-let ((ref (plist-get org-roam-capture--info :ref)))
+  (when-let* ((ref (plist-get org-roam-capture--info :ref)))
     (org-roam-ref-add ref)))
 
 ;;;; Finalizers
@@ -727,8 +727,8 @@ the current value of `point'."
 (defun org-roam-capture--finalize ()
   "Finalize the `org-roam-capture' process."
   (if org-note-abort
-      (when-let ((new-file (org-roam-capture--get :new-file))
-                 (_ (yes-or-no-p "Delete file for aborted capture?")))
+      (when-let* ((new-file (org-roam-capture--get :new-file))
+                  (_ (yes-or-no-p "Delete file for aborted capture?")))
         (when (find-buffer-visiting new-file)
           (kill-buffer (find-buffer-visiting new-file)))
         (delete-file new-file))
@@ -756,7 +756,7 @@ This function is to be called in the Org-capture finalization process."
   (when-let* ((mkr (org-roam-capture--get :call-location))
               (buf (marker-buffer mkr)))
     (with-current-buffer buf
-      (when-let ((region (org-roam-capture--get :region)))
+      (when-let* ((region (org-roam-capture--get :region)))
         (delete-region (car region) (cdr region))
         (set-marker (car region) nil)
         (set-marker (cdr region) nil))
