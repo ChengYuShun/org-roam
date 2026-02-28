@@ -104,9 +104,9 @@ input."
 
 (defun org-roam-quote-string (s)
   "Quotes string S."
-  (->> s
-       (org-roam-replace-string "\\" "\\\\")
-       (org-roam-replace-string "\"" "\\\"")))
+  (thread-last s
+               (org-roam-replace-string "\\" "\\\\")
+               (org-roam-replace-string "\"" "\\\"")))
 
 (defun org-roam-word-wrap (len s)
   "If S is longer than LEN, wrap the words with newlines."
